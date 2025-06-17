@@ -1,67 +1,78 @@
 #!/bin/bash
 
-# The function is used to obtain distribution information
+# Function to obtain distribution information
 get_distro_info() {
     local distro_id=$(lsb_release -i -s 2>/dev/null)
     local distro_version=$(lsb_release -r -s 2>/dev/null)
     local kernel_version=$(uname -r)
 
-    # If lsd_release is not available, try parsing the/etc/* - release file
     if [ -z "$distro_id" ] || [ -z "$distro_version" ]; then
-        distro_id=$(grep '^ID=' /etc/*-release | cut -d= -f2 | tr -d '"')
-        distro_version=$(grep '^VERSION_ID=' /etc/*-release | cut -d= -f2 | tr -d '"')
+        if [ -f /etc/os-release ]; then
+            distro_id=$(grep '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
+            distro_version=$(grep '^VERSION_ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
+        else
+            distro_id="Unknown"
+            distro_version="Unknown"
+        fi
     fi
 
     echo "$distro_id $distro_version (Kernel version: $kernel_version)"
 }
 
-# get Git repository name
-git_repo_name=''
+# Get Git repository name
 if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
     git_repo_name=$(basename "$(git rev-parse --show-toplevel)")
-    if [ $? -ne 0 ]; then
-        git_repo_name="(Can't get repo name)"
-    fi
 else
-    git_repo_name="It NOT a Git repo"
+    git_repo_name="Not a Git repository"
 fi
 
-# get CPU type
+# Get Git commit ID
+if command -v git &> /dev/null && git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+    git_version=$(git log -1 --pretty=format:'%h')
+else
+    git_version="Unavailable"
+fi
+
+# Get CPU type
 cpu_model=$(uname -m)
 
-# get memory size
-memory_size=$(free -h | grep Mem | awk '{print $2}')
+# Get memory size
+memory_size=$(free -h | awk '/^Mem:/ {print $2}')
 
-# get docker version
-docker_version=''
+# Get Docker version
 if command -v docker &> /dev/null; then
-    docker_version=$(docker --version | cut -d ' ' -f3)
+    docker_version=$(docker --version 2>/dev/null | head -n 1 | awk '{print $3}' | sed 's/,//')
+    [ -z "$docker_version" ] && docker_version="Installed but version not detected"
 else
-    docker_version="Docker not installed"
+    docker_version="Not installed"
 fi
 
-# get python version
-python_version=''
+# Get Python versions
+python2_version=""
+python3_version=""
 if command -v python &> /dev/null; then
-    python_version=$(python --version | cut -d ' ' -f2)
+    python2_version=$(python --version 2>&1 | awk '{print $2}')
+fi
+if command -v python3 &> /dev/null; then
+    python3_version=$(python3 --version 2>&1 | awk '{print $2}')
+fi
+
+# Prepare Python version summary
+if [ -n "$python2_version" ] && [ -n "$python3_version" ]; then
+    python_version="$python2_version | Python 3: $python3_version"
+elif [ -n "$python3_version" ]; then
+    python_version="$python3_version"
+elif [ -n "$python2_version" ]; then
+    python_version="$python2_version"
 else
     python_version="Python not installed"
 fi
 
-# Print all information
-echo "Current Repository: $git_repo_name"
-
-# get Commit ID
-git_version=$(git log -1 --pretty=format:'%h')
-
-if [ -z "$git_version" ]; then
-    echo "Commit Id: The current directory is not a Git repository, or the Git command is not installed."
-else
-    echo "Commit Id: $git_version"
-fi
-
-echo "Operating system: $(get_distro_info)"
-echo "CPU Type: $cpu_model"
-echo "Memory: $memory_size"
-echo "Docker Version: $docker_version"
-echo "Python Version: $python_version"
+# Print system information
+echo "Repository Name : $git_repo_name"
+echo "Latest Commit   : $git_version"
+echo "OS & Kernel     : $(get_distro_info)"
+echo "CPU Architecture: $cpu_model"
+echo "Memory Size     : $memory_size"
+echo "Docker Version  : $docker_version"
+echo "Python Version  : $python_version"
